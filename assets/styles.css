@@ -293,9 +293,11 @@ main {
 }
 
 .footer__brand img {
-    height: 36px;
+    max-height: 36px;
+    max-width: 160px;
     width: auto;
-    filter: brightness(10);
+    height: auto;
+    object-fit: contain;
 }
 
 .footer__brand p {

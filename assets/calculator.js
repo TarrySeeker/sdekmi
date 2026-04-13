@@ -138,14 +138,11 @@ $(document).ready(function() {
                 toLocationCode: $('#receiverCityId').val(),
                 fromLocation: $('#from_location').val(),
                 toLocation: $('#to_location').val(),
-                email: 'test@mail.ru',
-                phone: '7911111111',
                 insurance: $('#insurance').val() || '0',
                 length: $('#length').val(),
                 height: $('#height').val(),
                 weight: $('#weight').val(),
                 width: $('#width').val(),
-                recepient: 'd.dobychin@cdek.ru',
                 isMobile: isMobile
             },
             success: function(data) {

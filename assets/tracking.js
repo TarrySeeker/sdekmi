@@ -6,6 +6,7 @@
     var API_URL = 'https://api.cdek.me/info/proxy.php';
 
     var ERRORS = {
+        cant_determine_order: 'Заказ с указанным номером не найден',
         v2_internal_error: 'Запрос выполнился с системной ошибкой',
         v2_similar_request_still_processed: 'Предыдущий запрос ещё не выполнился',
         v2_bad_request: 'Передан некорректный запрос',
@@ -20,6 +21,35 @@
         v2_order_forbidden: 'Заказ принадлежит другому клиенту',
         v2_order_number_empty: 'Не переданы номер и идентификатор заказа'
     };
+
+    // Pull alerts out of the proxy error shape: the real CDEK response is
+    // serialised into data.raw_response as JSON, and top-level errors are in
+    // data.error. Returns a user-facing string or null if none found.
+    function extractError(data) {
+        if (data.raw_response) {
+            try {
+                var raw = JSON.parse(data.raw_response);
+                if (raw && raw.alerts && raw.alerts.length) {
+                    return raw.alerts
+                        .map(function(a) {
+                            return ERRORS[a.errorCode] || a.msg || 'Неизвестная ошибка';
+                        })
+                        .join('\n');
+                }
+            } catch (e) { /* fall through */ }
+        }
+        if (data.error) return data.error;
+        return null;
+    }
+
+    function formatDate(iso) {
+        if (!iso) return '';
+        var d = new Date(iso);
+        if (isNaN(d.getTime())) return iso;
+        var pad = function(n) { return n < 10 ? '0' + n : String(n); };
+        return pad(d.getDate()) + '.' + pad(d.getMonth() + 1) + '.' + d.getFullYear() +
+               ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+    }
 
     window.addEventListener('DOMContentLoaded', function() {
         var form = document.getElementById('track-form');
@@ -65,12 +95,12 @@
                     return res.json();
                 })
                 .then(function(data) {
-                    // Check for API errors
-                    if (data.alerts && data.alerts.length) {
-                        var errText = data.alerts.map(function(a) {
-                            return ERRORS[a.errorCode] || a.msg || 'Неизвестная ошибка';
-                        }).join('\n');
-                        showError(errText);
+                    if (data.success === false) {
+                        showError(extractError(data) || 'Заказ не найден');
+                        return;
+                    }
+                    if (!data.trackingDetails || !data.trackingDetails.length) {
+                        showError('По этому номеру нет информации об отправлении');
                         return;
                     }
 
@@ -119,7 +149,7 @@
                 html += '</div>';
                 html += '<div class="status-content">';
                 html += '<div class="status-meta">';
-                html += '<span class="status-date">' + escHtml(st.date || '') + '</span>';
+                html += '<span class="status-date">' + escHtml(formatDate(st.date)) + '</span>';
                 html += '<span class="status-city">' + escHtml(st.cityName || '') + '</span>';
                 html += '</div>';
                 html += '<div class="status-name">' + escHtml(st.statusName || '') + '</div>';

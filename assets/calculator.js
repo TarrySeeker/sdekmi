@@ -6,20 +6,26 @@ $(document).ready(function() {
     var API_URL = 'https://api.cdek.me/service.php';
 
     // --- City Autocomplete (local filtering, uses CITIES from cities.js) ---
+    // CITIES is an array of [label, code]. Prefix matches are ranked above
+    // substring matches so "Моск" surfaces Москва before "Московский".
     function setupAutocomplete(inputId, hiddenId) {
         $('#' + inputId).autocomplete({
             source: function(request, response) {
                 var term = request.term.toLowerCase();
-                var matches = [];
-                for (var i = 0; i < CITIES.length && matches.length < 10; i++) {
-                    if (CITIES[i].name.toLowerCase().indexOf(term) !== -1) {
-                        matches.push({
-                            label: CITIES[i].name,
-                            value: CITIES[i].name,
-                            id: CITIES[i].code
-                        });
+                var prefix = [];
+                var substr = [];
+                for (var i = 0; i < CITIES.length; i++) {
+                    var label = CITIES[i][0];
+                    var lc = label.toLowerCase();
+                    var pos = lc.indexOf(term);
+                    if (pos === 0) {
+                        prefix.push({ label: label, value: label, id: CITIES[i][1] });
+                        if (prefix.length >= 10) break;
+                    } else if (pos > 0 && substr.length < 10) {
+                        substr.push({ label: label, value: label, id: CITIES[i][1] });
                     }
                 }
+                var matches = prefix.concat(substr).slice(0, 10);
                 response(matches);
             },
             minLength: 1,

@@ -4,13 +4,13 @@
 
 (function () {
     var map, clusterer;
-    var currentCity = 'Москва';
     var PVZ_DATA = null;   // { cityCode: [[code,address,worktime,phone,lng,lat], ...] }
     var CITY_INDEX = null; // { nameLower: cityCode }
 
     // Build a name->code index from CITIES (loaded via assets/cities.js).
     // Same-name cities disambiguated by region collapse into their first
-    // occurrence here; autocomplete still exposes every variant.
+    // occurrence here (which is also the highest-PVZ-count match thanks to
+    // the ordering in cities.js).
     function buildCityIndex() {
         CITY_INDEX = {};
         if (typeof CITIES === 'undefined') return;
@@ -53,12 +53,10 @@
         buildCityIndex();
         loadPvzData()
             .then(function () {
-                loadCity(currentCity);
+                loadCity('Москва');
             })
             .catch(function () {
-                // PVZ data failed to load — still show map centered on
-                // Moscow with the Yandex fallback.
-                loadCity(currentCity);
+                showError('Не удалось загрузить базу ПВЗ. Перезагрузите страницу.');
             });
     });
 
@@ -69,40 +67,45 @@
 
     document.getElementById('city-input').addEventListener('keydown', function (e) {
         if (e.key === 'Enter') {
+            e.preventDefault();
             var city = this.value.trim();
             if (city) loadCity(city);
         }
     });
 
+    // Find PVZ list for a city. We try several spellings of the typed
+    // string against CITY_INDEX before giving up — handles "Москва",
+    // "москва", "Москва (Москва)" etc.
+    function lookupOffices(city) {
+        if (!CITY_INDEX || !PVZ_DATA) return null;
+        var key = city.toLowerCase();
+        var code = CITY_INDEX[key];
+        if (!code) {
+            // Try matching against the bare prefix of any indexed label
+            // (e.g. user types "Москва" but the only entry is
+            // "Москва (Татарстан)").
+            var keys = Object.keys(CITY_INDEX);
+            for (var i = 0; i < keys.length; i++) {
+                if (keys[i].split(' (')[0] === key) {
+                    code = CITY_INDEX[keys[i]];
+                    break;
+                }
+            }
+        }
+        if (!code) return null;
+        return PVZ_DATA[String(code)] || null;
+    }
+
     function loadCity(city) {
-        currentCity = city;
         showLoader();
-
-        ymaps
-            .geocode(city, { results: 1 })
-            .then(function (res) {
-                var first = res.geoObjects.get(0);
-                if (!first) {
-                    hideLoader();
-                    alert('Город не найден. Попробуйте другой запрос.');
-                    return;
-                }
-                var coords = first.geometry.getCoordinates();
-                map.setCenter(coords, 12, { duration: 300 });
-
-                var code = CITY_INDEX ? CITY_INDEX[city.toLowerCase()] : null;
-                var offices = code && PVZ_DATA ? PVZ_DATA[String(code)] : null;
-
-                if (offices && offices.length) {
-                    displayOffices(offices);
-                } else {
-                    searchYandex();
-                }
-            })
-            .catch(function () {
-                hideLoader();
-                alert('Город не найден. Попробуйте другой запрос.');
-            });
+        var offices = lookupOffices(city);
+        if (!offices || !offices.length) {
+            hideLoader();
+            showError('В городе «' + city + '» пока нет пунктов выдачи.');
+            return;
+        }
+        clearError();
+        displayOffices(offices);
     }
 
     function displayOffices(offices) {
@@ -123,32 +126,18 @@
         clusterer.add(placemarks);
         hideLoader();
 
-        if (placemarks.length === 0) searchYandex();
-        else if (placemarks.length === 1) {
+        if (placemarks.length === 1) {
             map.setCenter(placemarks[0].geometry.getCoordinates(), 14, { duration: 300 });
         } else {
-            map.setBounds(clusterer.getBounds(), { checkZoomRange: true, zoomMargin: 40 });
+            try {
+                map.setBounds(clusterer.getBounds(), {
+                    checkZoomRange: true,
+                    zoomMargin: 40,
+                });
+            } catch (e) {
+                map.setCenter(placemarks[0].geometry.getCoordinates(), 12);
+            }
         }
-    }
-
-    function searchYandex() {
-        ymaps
-            .geocode('СДЭК ' + currentCity, { results: 50 })
-            .then(function (res) {
-                clusterer.removeAll();
-                var placemarks = [];
-                var len = res.geoObjects.getLength();
-                for (var i = 0; i < len; i++) {
-                    var obj = res.geoObjects.get(i);
-                    var coords = obj.geometry.getCoordinates();
-                    var name = obj.properties.get('name') || 'ПВЗ СДЭК';
-                    var addr = obj.properties.get('description') || '';
-                    placemarks.push(createPlacemark(coords, name, addr, '', ''));
-                }
-                clusterer.add(placemarks);
-                hideLoader();
-            })
-            .catch(hideLoader);
     }
 
     function createPlacemark(coords, name, address, hours, phone) {
@@ -179,6 +168,26 @@
     }
     function hideLoader() {
         var el = document.getElementById('map-loading');
+        if (el) el.style.display = 'none';
+    }
+
+    // Inline status message under the search bar.
+    function showError(msg) {
+        var el = document.getElementById('map-status');
+        if (!el) {
+            el = document.createElement('div');
+            el.id = 'map-status';
+            el.className = 'map-status';
+            var search = document.querySelector('.map-search-row');
+            if (search && search.parentNode) {
+                search.parentNode.insertBefore(el, search.nextSibling);
+            }
+        }
+        el.textContent = msg;
+        el.style.display = 'block';
+    }
+    function clearError() {
+        var el = document.getElementById('map-status');
         if (el) el.style.display = 'none';
     }
 })();

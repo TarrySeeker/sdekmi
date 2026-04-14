@@ -62,16 +62,138 @@
 
     document.getElementById('city-search-btn').addEventListener('click', function () {
         var city = document.getElementById('city-input').value.trim();
+        hideSuggest();
         if (city) loadCity(city);
     });
 
-    document.getElementById('city-input').addEventListener('keydown', function (e) {
-        if (e.key === 'Enter') {
-            e.preventDefault();
-            var city = this.value.trim();
-            if (city) loadCity(city);
+    setupAutocomplete();
+
+    // ---- Autocomplete ----------------------------------------------------
+    var suggestItems = []; // current shown items: [{label,code,pvzCount}, ...]
+    var activeIdx = -1;
+
+    function setupAutocomplete() {
+        var input = document.getElementById('city-input');
+        var list = document.getElementById('city-suggest');
+
+        input.addEventListener('input', function () {
+            renderSuggest(this.value);
+        });
+        input.addEventListener('focus', function () {
+            if (this.value.trim()) renderSuggest(this.value);
+        });
+        input.addEventListener('keydown', function (e) {
+            if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                moveActive(1);
+            } else if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                moveActive(-1);
+            } else if (e.key === 'Enter') {
+                e.preventDefault();
+                if (activeIdx >= 0 && suggestItems[activeIdx]) {
+                    selectSuggest(activeIdx);
+                } else {
+                    hideSuggest();
+                    var v = this.value.trim();
+                    if (v) loadCity(v);
+                }
+            } else if (e.key === 'Escape') {
+                hideSuggest();
+            }
+        });
+
+        // Click outside closes the dropdown.
+        document.addEventListener('click', function (e) {
+            if (e.target !== input && !list.contains(e.target)) hideSuggest();
+        });
+
+        // Click on an item.
+        list.addEventListener('click', function (e) {
+            var li = e.target.closest('.map-suggest__item');
+            if (!li) return;
+            var idx = Number(li.getAttribute('data-idx'));
+            if (!Number.isNaN(idx)) selectSuggest(idx);
+        });
+    }
+
+    function renderSuggest(query) {
+        var list = document.getElementById('city-suggest');
+        var term = query.trim().toLowerCase();
+        if (!term || typeof CITIES === 'undefined') {
+            hideSuggest();
+            return;
         }
-    });
+
+        // Only suggest cities that actually have PVZ in the snapshot —
+        // there's nothing to show on the map for the rest, and this also
+        // filters out the long tail of villages.
+        var prefix = [];
+        var substr = [];
+        for (var i = 0; i < CITIES.length; i++) {
+            var label = CITIES[i][0];
+            var code = CITIES[i][1];
+            var bucket = PVZ_DATA && PVZ_DATA[String(code)];
+            if (!bucket || !bucket.length) continue;
+            var lc = label.toLowerCase();
+            var pos = lc.indexOf(term);
+            if (pos === 0) {
+                prefix.push({ label: label, code: code, pvzCount: bucket.length });
+                if (prefix.length >= 10) break;
+            } else if (pos > 0 && substr.length < 10) {
+                substr.push({ label: label, code: code, pvzCount: bucket.length });
+            }
+        }
+        suggestItems = prefix.concat(substr).slice(0, 10);
+        activeIdx = -1;
+
+        if (!suggestItems.length) {
+            hideSuggest();
+            return;
+        }
+
+        var html = '';
+        for (var j = 0; j < suggestItems.length; j++) {
+            var it = suggestItems[j];
+            html +=
+                '<li class="map-suggest__item" data-idx="' + j + '">' +
+                escHtml(it.label) +
+                '<span class="map-suggest__count">' + it.pvzCount + ' ПВЗ</span>' +
+                '</li>';
+        }
+        list.innerHTML = html;
+        list.hidden = false;
+    }
+
+    function moveActive(delta) {
+        if (!suggestItems.length) return;
+        activeIdx = (activeIdx + delta + suggestItems.length) % suggestItems.length;
+        var list = document.getElementById('city-suggest');
+        var children = list.children;
+        for (var i = 0; i < children.length; i++) {
+            children[i].classList.toggle('is-active', i === activeIdx);
+        }
+        if (children[activeIdx]) {
+            children[activeIdx].scrollIntoView({ block: 'nearest' });
+        }
+    }
+
+    function selectSuggest(idx) {
+        var item = suggestItems[idx];
+        if (!item) return;
+        var input = document.getElementById('city-input');
+        input.value = item.label;
+        hideSuggest();
+        loadCity(item.label);
+    }
+
+    function hideSuggest() {
+        var list = document.getElementById('city-suggest');
+        if (list) list.hidden = true;
+        suggestItems = [];
+        activeIdx = -1;
+    }
+    // ---------------------------------------------------------------------
 
     // Find PVZ list for a city. We try several spellings of the typed
     // string against CITY_INDEX before giving up — handles "Москва",

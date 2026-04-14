@@ -58,7 +58,10 @@
                     <div class="map-badge">Более 3000 ПВЗ</div>
                 </div>
                 <div class="map-search-row">
-                    <input type="text" id="city-input" placeholder="Введите город, например: Москва" value="Москва">
+                    <div class="map-search-input">
+                        <input type="text" id="city-input" placeholder="Введите город, например: Москва" value="Москва" autocomplete="off">
+                        <ul id="city-suggest" class="map-suggest" hidden></ul>
+                    </div>
                     <button type="button" id="city-search-btn">Найти ПВЗ</button>
                 </div>
                 <div class="map-wrapper">
